@@ -1,0 +1,121 @@
+#! /usr/bin/python
+
+import os
+import glob
+import json
+import yaml
+import argparse
+import subprocess
+
+class Inventory(object):
+
+    def __init__(self):
+        # list of functions to call when an Inventory obkect is created at running of the script
+        self.inventory = dict()
+        self.script_dir = os.path.dirname(os.path.realpath(__file__))
+        self.parse_cli_args()
+        self.get_environment_vars()
+        self.get_cluster_environment()
+        self._empty_inventory()
+        self.get_host_list()
+        self.group_variables_global()
+        self.group_variables_by_environment()
+        self.group_variables_by_site()
+        self.host_variables()
+        print(self.json_format_dict(self.inventory, True))
+
+    def parse_cli_args(self):
+        # parse the necessary cli arguments
+        parser = argparse.ArgumentParser(description='Help Text')
+        parser.add_argument('--list', action='store_true', default=True, help='List instances')
+        parser.add_argument('--host', action='store', help='List instances')
+        self.args = parser.parse_args()
+
+    def get_environment_vars(self):
+        self.cluster_name = os.getenv("CLUSTER_NAME")
+
+    def get_cluster_environment(self):
+        self.environment = self.cluster_name.split('-')[1][0]
+
+    def _empty_inventory(self):
+        # hosts
+        self.inventory['masters'] = {'hosts':[]}
+        self.inventory['nodes'] = {'hosts':[]}
+        self.inventory['ingress'] = {'hosts':[]}
+        self.inventory['registry'] = {'hosts':[]}
+
+        # groups
+        self.inventory['kubecluster'] = {'children':{}}
+        self.inventory['kubecluster']['children'] = ['masters','nodes']
+
+        # host variables
+        self.inventory['_meta'] = {'hostvars':{}}
+
+        # group variables
+        self.inventory['all'] = {'vars':{}}
+
+    def get_host_list(self):
+        # reading in a terraform state file as a mock iass 
+        # can be pulled from Terraform Enterprie.
+        # can be adapated to pull from other iaas system as a source of host information
+        with open(self.script_dir + '/../mock/iaas/terraform.tfstate', 'r') as state_file:
+            self.state_file = json.load(state_file)
+
+        for resource in self.state_file['modules'][0]['resources']:
+            if resource.startswith('libvirt_domain'):
+                machine_type = self.state_file['modules'][0]['resources'][resource]['primary']['attributes']['metadata']
+                machine_name = self.state_file['modules'][0]['resources'][resource]['primary']['attributes']['name']
+                self.inventory[machine_type]['hosts'].append(machine_name)
+                self.inventory['_meta']['hostvars'][machine_name] = {}
+
+    def decrypt_vaulted_file(self, file_name):
+        # get the decrypted contents of the file and returns them
+        decrypt_command = subprocess.Popen(['ansible-vault', 'view', file_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, _ = decrypt_command.communicate()
+        return out.strip()
+
+    def group_variables_global(self):
+        # read all the files in the global folder and loads them in the inventory, descrypts encrypted files first
+        global_vars_path = self.script_dir + '/../global/*.yaml'
+        global_vars_file = glob.glob(global_vars_path)
+        for var_file in global_vars_file:
+            with open (var_file, 'r') as f:
+                self.inventory['all']['vars'].update(yaml.safe_load(f.read()))
+
+    def group_variables_by_environment(self):
+        # read all the files in the environment folder and loads them in the inventory, descrypts encrypted files first
+        environment_vars_path = self.script_dir + '/../' + self.environment  + '/*.yaml'
+        environment_vars_file = glob.glob(environment_vars_path)
+        for var_file in environment_vars_file:
+            if 'vaulted' in var_file:
+                self.inventory['all']['vars'].update(yaml.safe_load(self.decrypt_vaulted_file(var_file)))
+            else:
+                with open (var_file, 'r') as f:
+                    self.inventory['all']['vars'].update(yaml.safe_load(f.read()))
+
+    def group_variables_by_site(self):
+        # read all the site and site-vaulted files and loads them in the inventory, descrypts encrypted files first
+	site_vars_file = self.script_dir + '/../site/' + self.cluster_name  + '.yaml'
+	site_vaulted_vars_file = self.script_dir + '/../site/' + self.cluster_name  + '-vaulted.yaml'
+        with open (site_vars_file, 'r') as f:
+            self.inventory['all']['vars'].update(yaml.safe_load(f.read()))
+        self.inventory['all']['vars'].update(yaml.safe_load(self.decrypt_vaulted_file(site_vaulted_vars_file)))
+
+    def host_variables(self):
+        # puts together host variables
+        # this section can customized to do more than this one variable
+        for host in self.inventory['masters']['hosts']:
+            self.inventory['_meta']['hostvars'][host].update({'ansible_python_interprete': '/usr/bin/python3'})
+        for host in self.inventory['nodes']['hosts']:
+            self.inventory['_meta']['hostvars'][host].update({'ansible_python_interprete': '/usr/bin/python3'})
+        for host in self.inventory['registry']['hosts']:
+            self.inventory['_meta']['hostvars'][host].update({'ansible_python_interprete': '/usr/bin/python3'})
+
+    def json_format_dict(self, data, pretty=False):
+        # pretty print json
+      	if pretty:
+	    return json.dumps(data, sort_keys=True, indent=4)
+	else:
+	    return json.dumps(data)
+
+Inventory()
