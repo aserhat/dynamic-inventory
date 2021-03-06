@@ -20,7 +20,7 @@ class Inventory(object):
         self.get_cluster_environment()
         self.create_empty_inventory()
         self.get_host_list()
-        self.group_variables_global()
+        self.group_variables_common()
         self.group_variables_by_environment()
         self.group_variables_by_site()
         self.host_variables()
@@ -65,8 +65,7 @@ class Inventory(object):
 
     def get_host_list(self):
         # reading in a terraform state file as a mock iass 
-        # can be pulled from Terraform Enterprie.
-        # can be adapated to pull from other iaas system as a source of host information
+        # can be pulled from Terraform Enterprise, vSphere etc.
         with open(self.script_dir + '/../mock/iaas/terraform.tfstate', 'r') as state_file:
             self.state_file = json.load(state_file)
 
@@ -77,11 +76,11 @@ class Inventory(object):
                 self.inventory[machine_type]['hosts'].append(machine_name)
                 self.inventory['_meta']['hostvars'][machine_name] = {}
 
-    def group_variables_global(self):
-        # read all the files in the global folder and loads them in the inventory, descrypts encrypted files first
-        global_vars_path = self.script_dir + '/../global/*.yaml'
-        global_vars_file = glob.glob(global_vars_path)
-        for var_file in global_vars_file:
+    def group_variables_common(self):
+        # read all the files in the common folder and loads them in the inventory, descrypts encrypted files first
+        common_vars_path = self.script_dir + '/../common/*.yaml'
+        common_vars_file = glob.glob(common_vars_path)
+        for var_file in common_vars_file:
             with open (var_file, 'r') as f:
                 self.inventory['all']['vars'].update(yaml.safe_load(f.read()))
 
