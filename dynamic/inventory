@@ -8,6 +8,7 @@ import argparse
 import subprocess
 from ansible_vault import Vault
 
+
 class Inventory(object):
 
     def __init__(self):
@@ -29,14 +30,22 @@ class Inventory(object):
     def parse_cli_args(self):
         # parse the necessary cli arguments
         parser = argparse.ArgumentParser(description='Help Text')
-        parser.add_argument('--list', action='store_true', default=True, help='List instances')
+        parser.add_argument('--list', action='store_true',
+                            default=True, help='List instances')
         parser.add_argument('--host', action='store', help='List instances')
         self.args = parser.parse_args()
 
     def get_environment_vars(self):
         # reads in some environment variables we need
+        MANDATORY_ENV_VARS = ["CLUSTER_NAME", "ANSIBLE_VAULT_PASSWORD_FILE"]
+        for var in MANDATORY_ENV_VARS:
+            if var not in os.environ:
+                raise EnvironmentError(
+                    "Failed because {} is not set.".format(var))
+
         self.cluster_name = os.getenv("CLUSTER_NAME")
-        self.ansible_vault_password_file = os.getenv("ANSIBLE_VAULT_PASSWORD_FILE")
+        self.ansible_vault_password_file = os.getenv(
+            "ANSIBLE_VAULT_PASSWORD_FILE")
 
     def get_cluster_environment(self):
         # gets the environment from the cluster name
@@ -48,23 +57,23 @@ class Inventory(object):
 
     def create_empty_inventory(self):
         # hosts
-        self.inventory['masters'] = {'hosts':[]}
-        self.inventory['nodes'] = {'hosts':[]}
-        self.inventory['ingress'] = {'hosts':[]}
-        self.inventory['registry'] = {'hosts':[]}
+        self.inventory['masters'] = {'hosts': []}
+        self.inventory['nodes'] = {'hosts': []}
+        self.inventory['ingress'] = {'hosts': []}
+        self.inventory['registry'] = {'hosts': []}
 
         # groups
-        self.inventory['kubecluster'] = {'children':{}}
-        self.inventory['kubecluster']['children'] = ['masters','nodes']
+        self.inventory['kubecluster'] = {'children': {}}
+        self.inventory['kubecluster']['children'] = ['masters', 'nodes']
 
         # host variables
-        self.inventory['_meta'] = {'hostvars':{}}
+        self.inventory['_meta'] = {'hostvars': {}}
 
         # group variables
-        self.inventory['all'] = {'vars':{}}
+        self.inventory['all'] = {'vars': {}}
 
     def get_host_list(self):
-        # reading in a terraform state file as a mock iass 
+        # reading in a terraform state file as a mock iass
         # can be pulled from Terraform Enterprise, vSphere etc.
         with open(self.script_dir + '/../mock/iaas/terraform.tfstate', 'r') as state_file:
             self.state_file = json.load(state_file)
@@ -81,43 +90,51 @@ class Inventory(object):
         common_vars_path = self.script_dir + '/../common/*.yaml'
         common_vars_file = glob.glob(common_vars_path)
         for var_file in common_vars_file:
-            with open (var_file, 'r') as f:
+            with open(var_file, 'r') as f:
                 self.inventory['all']['vars'].update(yaml.safe_load(f.read()))
 
     def group_variables_by_environment(self):
         # read all the files in the environment folder and loads them in the inventory, descrypts encrypted files first
-        environment_vars_path = self.script_dir + '/../' + self.environment  + '/*.yaml'
+        environment_vars_path = self.script_dir + '/../' + self.environment + '/*.yaml'
         environment_vars_file = glob.glob(environment_vars_path)
         for var_file in environment_vars_file:
             if 'vaulted' in var_file:
-                self.inventory['all']['vars'].update(self.vault.load(open(var_file).read()))
+                self.inventory['all']['vars'].update(
+                    self.vault.load(open(var_file).read()))
             else:
-                with open (var_file, 'r') as f:
-                    self.inventory['all']['vars'].update(yaml.safe_load(f.read()))
+                with open(var_file, 'r') as f:
+                    self.inventory['all']['vars'].update(
+                        yaml.safe_load(f.read()))
 
     def group_variables_by_site(self):
         # read all the site and site-vaulted files and loads them in the inventory, descrypts encrypted files first
-	site_vars_file = self.script_dir + '/../site/' + self.cluster_name  + '.yaml'
-	site_vaulted_vars_file = self.script_dir + '/../site/' + self.cluster_name  + '-vaulted.yaml'
-        with open (site_vars_file, 'r') as f:
+        site_vars_file = self.script_dir + '/../site/' + self.cluster_name + '.yaml'
+        site_vaulted_vars_file = self.script_dir + \
+            '/../site/' + self.cluster_name + '-vaulted.yaml'
+        with open(site_vars_file, 'r') as f:
             self.inventory['all']['vars'].update(yaml.safe_load(f.read()))
-        self.inventory['all']['vars'].update(self.vault.load(open(site_vaulted_vars_file).read()))
+        self.inventory['all']['vars'].update(
+            self.vault.load(open(site_vaulted_vars_file).read()))
 
     def host_variables(self):
         # puts together host variables
         # this section can customized to do more than this one variable
         for host in self.inventory['masters']['hosts']:
-            self.inventory['_meta']['hostvars'][host].update({'ansible_python_interprete': '/usr/bin/python3'})
+            self.inventory['_meta']['hostvars'][host].update(
+                {'ansible_python_interprete': '/usr/bin/python3'})
         for host in self.inventory['nodes']['hosts']:
-            self.inventory['_meta']['hostvars'][host].update({'ansible_python_interprete': '/usr/bin/python3'})
+            self.inventory['_meta']['hostvars'][host].update(
+                {'ansible_python_interprete': '/usr/bin/python3'})
         for host in self.inventory['registry']['hosts']:
-            self.inventory['_meta']['hostvars'][host].update({'ansible_python_interprete': '/usr/bin/python3'})
+            self.inventory['_meta']['hostvars'][host].update(
+                {'ansible_python_interprete': '/usr/bin/python3'})
 
     def json_format_dict(self, data, pretty=False):
         # pretty print json
-      	if pretty:
-	    return json.dumps(data, sort_keys=True, indent=4)
-	else:
-	    return json.dumps(data)
+        if pretty:
+            return json.dumps(data, sort_keys=True, indent=4)
+        else:
+            return json.dumps(data)
+
 
 Inventory()
